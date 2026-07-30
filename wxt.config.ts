@@ -4,6 +4,10 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
     name: 'PostWeavers: AI Replies in Your Voice',
+    // Item identity public key from the published store package. Pinning it
+    // makes unpacked dev builds load under the store extension ID, so the
+    // chromiumapp.org OAuth redirect URI is the same in dev and production.
+    key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAukAKnsRNmh72+hKIqGHaK/vhCXcfErg1rPQdmFcq1oE4bTUijoPydH2WTunKPXfmgaI8tlekRoaBs63BjHoLFEzs7xInoMpEkr9VKkYgW7OVNJFnx1cxAiAXpPHqD/uHV65s4cr62YtJLM/pgT0/mDffvhE9ejnvgjuak5zR1WyFk1wTrTuEGmJ6qBhLTpYUqJOMR5+zHU60P6VNi+glNyybH1nxC6bRy45xcUDnVsVjSgHPzJdbQ9FPSzexNIYGURg6OumXODuZGLXSpYSH3gSx2zt9bbGRzU0bvPjh5ybRV2DxoezPmCQOprLwJZnIJGxx0GpIuoy6o00DoKi37wIDAQAB',
     description: 'Drafts X replies in your voice. You read, edit, and press Post yourself. Never automated.',
     permissions: ['activeTab', 'storage', 'sidePanel', 'tabs', 'unlimitedStorage', 'alarms', 'identity'],
     host_permissions: [

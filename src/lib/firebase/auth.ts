@@ -153,12 +153,18 @@ export async function linkWithGoogle(): Promise<
       interactive: true,
     });
   } catch (error) {
+    // Developer detail stays in the console; users get something actionable.
+    console.warn(
+      `[PostWeavers] Google sign-in failed: ${String(error)}. ` +
+        `If this is a fresh setup, add ${getRedirectUri()} to the web OAuth ` +
+        "client's Authorized redirect URIs in Google Cloud console → Credentials."
+    );
     return {
       ok: false,
       error:
-        `Google sign-in was cancelled or blocked (${String(error)}). ` +
-        `If this is the first run: add ${getRedirectUri()} to the web OAuth client's ` +
-        'Authorized redirect URIs in Google Cloud console → Credentials.',
+        'Google sign-in did not complete. Signing in is optional: you can keep ' +
+        'drafting with your own API key. If this keeps happening, email ' +
+        'hello@postweavers.com.',
     };
   }
 
