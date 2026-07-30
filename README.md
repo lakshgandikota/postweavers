@@ -2,7 +2,7 @@
 
 **AI-drafted X replies in your own voice. You read, edit, and press Post yourself. Never automated.**
 
-[Install from the Chrome Web Store](https://postweavers.com/install) · [Website](https://postweavers.com) · [Why not automation?](https://postweavers.com/why-not-automation)
+[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/postweavers-ai-replies-in/ackmlmajnidhppghbbcbnkfbkibfbbhd) · [Website](https://postweavers.com) · [Why not automation?](https://postweavers.com/why-not-automation)
 
 ## Why this repo is public
 
