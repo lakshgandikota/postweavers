@@ -2,9 +2,9 @@
  * Streaming LLM client for reply drafting
  *
  * Runs in the background service worker: host_permissions cover the provider
- * APIs, so fetch works without CORS issues for both providers (raw SSE is
- * used instead of provider SDKs to support both providers with one small
- * code path and keep the extension bundle lean).
+ * APIs, so fetch works without CORS issues for any of them (raw SSE is used
+ * instead of provider SDKs to support every provider with one small code
+ * path and keep the extension bundle lean).
  *
  * Streaming is mandatory for the drafting UX — time-to-first-token, not
  * total generation time, determines perceived latency.
@@ -70,6 +70,8 @@ export async function streamDraft(
     await streamManaged(request, request.managed.idToken, onText, signal);
   } else if (request.provider === 'anthropic') {
     await streamAnthropic(request, model, onText, usage, signal);
+  } else if (request.provider === 'openrouter') {
+    await streamOpenRouter(request, model, onText, usage, signal);
   } else {
     await streamOpenAi(request, model, onText, usage, signal);
   }
@@ -242,6 +244,74 @@ async function streamOpenAi(
   await consumeSse(response, signal, (data) => {
     if (data === '[DONE]') return;
     const event = JSON.parse(data);
+    const text = event.choices?.[0]?.delta?.content;
+    if (typeof text === 'string') {
+      onText(text);
+    }
+    if (event.usage) {
+      usage.inputTokens = event.usage.prompt_tokens ?? usage.inputTokens;
+      usage.outputTokens = event.usage.completion_tokens ?? usage.outputTokens;
+    }
+  });
+}
+
+/**
+ * OpenRouter: an OpenAI-compatible gateway that routes to many providers.
+ *
+ * Four differences from the OpenAI path matter here:
+ * - the documented token cap is `max_tokens`, not `max_completion_tokens`
+ * - usage always comes back in the final chunk, so `stream_options` is not
+ *   sent (it is not in OpenRouter's documented parameter list, and upstream
+ *   providers vary in whether they accept it)
+ * - the stream can carry SSE comment lines as keep-alives; consumeSse only
+ *   reads `data:` lines, so those fall away on their own
+ * - an upstream provider can fail mid-stream, which arrives as an `error`
+ *   object in a chunk rather than a failed HTTP status
+ *
+ * `HTTP-Referer` is a custom header name, not the forbidden `Referer`, so
+ * fetch is allowed to set it. Together with `X-Title` it attributes traffic
+ * to PostWeavers on OpenRouter's public app rankings.
+ */
+async function streamOpenRouter(
+  request: LlmRequest,
+  model: string,
+  onText: (text: string) => void,
+  usage: UsageCounters,
+  signal?: AbortSignal
+): Promise<void> {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    signal,
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${request.apiKey}`,
+      'HTTP-Referer': 'https://postweavers.com',
+      'X-Title': 'PostWeavers',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: request.maxTokens,
+      stream: true,
+      messages: [
+        { role: 'system', content: request.prompt.system },
+        { role: 'user', content: request.prompt.user },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response, 'OpenRouter'));
+  }
+
+  await consumeSse(response, signal, (data) => {
+    if (data === '[DONE]') return;
+    const event = JSON.parse(data);
+
+    if (event.error) {
+      const detail = event.error.message ?? 'the upstream provider failed';
+      throw new Error(`OpenRouter error: ${detail}`);
+    }
+
     const text = event.choices?.[0]?.delta?.content;
     if (typeof text === 'string') {
       onText(text);

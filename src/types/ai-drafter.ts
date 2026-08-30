@@ -41,12 +41,15 @@ export const STRATEGY_DESCRIPTIONS: Record<ReplyStrategy, string> = {
 /**
  * LLM provider for bring-your-own-key drafting
  */
-export type LlmProvider = 'anthropic' | 'openai';
+export type LlmProvider = 'anthropic' | 'openai' | 'openrouter';
 
 /** Default model per provider (user can override in settings) */
 export const DEFAULT_MODELS: Record<LlmProvider, string> = {
   anthropic: 'claude-opus-4-8',
   openai: 'gpt-4o-mini',
+  // OpenRouter namespaces every model as `vendor/model`. Sonnet balances
+  // voice-matching quality against cost for replies this short.
+  openrouter: 'anthropic/claude-sonnet-5',
 };
 
 /**

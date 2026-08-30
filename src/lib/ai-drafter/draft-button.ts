@@ -25,6 +25,13 @@ import { insertTemplateText, focusComposeBox } from '../composer/template-insert
 /** Marks toolbars we've already injected into */
 const INJECTED_ATTR = 'data-pw-draft-btn';
 
+/** Provider display names for the "add your key" banner */
+const PROVIDER_NAMES: Record<string, string> = {
+  anthropic: 'Claude',
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+};
+
 /** The subset of strategies offered in the compact in-page menu */
 const QUICK_STRATEGIES: ReplyStrategy[] = [
   'agree_add',
@@ -207,7 +214,7 @@ export class DraftButtonInjector {
 
     const noKeyBanner = hasKey
       ? ''
-      : `<div class="banner">Add your ${provider === 'anthropic' ? 'Claude' : 'OpenAI'} API key in the Postweaver side panel to draft.</div>`;
+      : `<div class="banner">Add your ${PROVIDER_NAMES[provider] ?? 'provider'} API key in the Postweaver side panel to draft.</div>`;
 
     return /* html */ `
       <style>

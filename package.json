@@ -1,6 +1,6 @@
 {
   "name": "postweavers",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "PostWeavers: AI-drafted X replies in your own voice. You read, edit, and press Post yourself. Never automated.",
   "type": "module",
   "scripts": {

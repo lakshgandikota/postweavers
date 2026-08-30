@@ -76,6 +76,20 @@ export function SyncAccount() {
   );
 }
 
+/** Display name per provider, used for the picker and the storage note */
+const PROVIDER_LABELS: Record<LlmProvider, string> = {
+  anthropic: 'Claude',
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+};
+
+/** Shape of each provider's key, shown as the input placeholder */
+const PROVIDER_KEY_HINTS: Record<LlmProvider, string> = {
+  anthropic: 'sk-ant-…',
+  openai: 'sk-…',
+  openrouter: 'sk-or-v1-…',
+};
+
 /**
  * AI drafter configuration: provider, API key, model, and persona.
  * The API key stays in chrome.storage.local and is only sent to the
@@ -197,7 +211,7 @@ export function DrafterSettings({
       <div>
         <label className={labelClass}>Provider</label>
         <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800 p-1">
-          {(['anthropic', 'openai'] as LlmProvider[]).map((provider) => (
+          {(['anthropic', 'openai', 'openrouter'] as LlmProvider[]).map((provider) => (
             <button
               key={provider}
               type="button"
@@ -208,7 +222,7 @@ export function DrafterSettings({
                   : 'text-x-secondary-light dark:text-x-secondary-dark'
               }`}
             >
-              {provider === 'anthropic' ? 'Claude' : 'OpenAI'}
+              {PROVIDER_LABELS[provider]}
             </button>
           ))}
         </div>
@@ -223,7 +237,7 @@ export function DrafterSettings({
             value={apiKeyInput}
             onChange={(e) => setApiKeyInput(e.target.value)}
             onBlur={() => onUpdate({ apiKey: apiKeyInput.trim() })}
-            placeholder={settings.provider === 'anthropic' ? 'sk-ant-…' : 'sk-…'}
+            placeholder={PROVIDER_KEY_HINTS[settings.provider]}
             className={inputClass}
           />
           <button
@@ -235,7 +249,7 @@ export function DrafterSettings({
           </button>
         </div>
         <p className="mt-1 text-[10px] text-x-secondary-light dark:text-x-secondary-dark">
-          Stored locally; sent only to {settings.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'}.
+          Stored locally; sent only to {PROVIDER_LABELS[settings.provider]}.
         </p>
       </div>
 
@@ -249,6 +263,22 @@ export function DrafterSettings({
           placeholder={DEFAULT_MODELS[settings.provider]}
           className={inputClass}
         />
+        {settings.provider === 'openrouter' && (
+          <p className="mt-1 text-[10px] text-x-secondary-light dark:text-x-secondary-dark">
+            OpenRouter model IDs are namespaced, like{' '}
+            <span className="font-mono">anthropic/claude-sonnet-5</span> or{' '}
+            <span className="font-mono">google/gemini-2.5-flash</span>. Browse them at{' '}
+            <a
+              href="https://openrouter.ai/models"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-x-accent hover:underline"
+            >
+              openrouter.ai/models
+            </a>
+            .
+          </p>
+        )}
       </div>
       </>
       )}

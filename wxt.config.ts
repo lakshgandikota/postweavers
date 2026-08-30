@@ -20,6 +20,7 @@ export default defineConfig({
       '*://pro.x.com/*',
       'https://api.anthropic.com/*',
       'https://api.openai.com/*',
+      'https://openrouter.ai/*',
       'https://identitytoolkit.googleapis.com/*',
       'https://securetoken.googleapis.com/*',
       'https://firestore.googleapis.com/*',
