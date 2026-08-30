@@ -2,6 +2,9 @@ import { defineConfig } from 'wxt';
 
 export default defineConfig({
   modules: ['@wxt-dev/module-react'],
+  // Visible (non-dotted) build dir: macOS file pickers hide .output, which
+  // makes "Load unpacked" in chrome://extensions needlessly fiddly.
+  outDir: 'build',
   manifest: {
     name: 'PostWeavers: AI Replies in Your Voice',
     // Item identity public key from the published store package. Pinning it
