@@ -4,7 +4,7 @@ export {
   buildUserPrompt,
   buildVoiceLearningPrompt,
 } from './prompt-builder';
-export type { BuiltPrompt, ResolvedContext, VoiceExample } from './prompt-builder';
+export type { BuiltPrompt, ResolvedContext, TopicContext, VoiceExample } from './prompt-builder';
 export { streamDraft, completeText } from './llm-client';
 export type { LlmRequest, StreamMetrics } from './llm-client';
 export { extractReplyTarget } from './reply-context';

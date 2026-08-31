@@ -13,6 +13,8 @@ import {
   subscribeToAiDrafterSettings,
 } from '../lib/storage';
 import type { ComposeContext } from '../types/messages';
+import type { Topic } from '../types/topics';
+import { getTopics, subscribeToTopics, suggestTopics } from '../lib/topics';
 
 export type DraftStatus = 'idle' | 'streaming' | 'done' | 'error';
 
@@ -47,6 +49,14 @@ interface UseDrafterReturn {
   context: ContextToggles;
   toggleContext: (key: keyof ContextToggles) => void;
 
+  // Topic pools
+  topics: Topic[];
+  /** Ids selected for this draft (pinned topics are always added on top) */
+  selectedTopicIds: string[];
+  /** Ids the auto-suggester picked from the post text */
+  suggestedTopicIds: string[];
+  toggleTopic: (id: string) => void;
+
   // Draft output state
   draft: string;
   setDraft: (value: string) => void;
@@ -80,6 +90,10 @@ export function useDrafter(): UseDrafterReturn {
     DEFAULT_AI_DRAFTER_SETTINGS.contextDefaults
   );
 
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>([]);
+  const [suggestedTopicIds, setSuggestedTopicIds] = useState<string[]>([]);
+
   const [draft, setDraft] = useState('');
   const [status, setStatus] = useState<DraftStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +114,28 @@ export function useDrafter(): UseDrafterReturn {
     });
 
     return subscribeToAiDrafterSettings(setSettings);
+  }, []);
+
+  // Topics: keep the list live, and re-suggest whenever the target changes
+  useEffect(() => {
+    getTopics().then(setTopics);
+    return subscribeToTopics(setTopics);
+  }, []);
+
+  useEffect(() => {
+    const text = target ? [target.text, ...target.thread.map((t) => t.text)].join(' ') : '';
+    const suggested = suggestTopics(text, topics).map((t) => t.id);
+    setSuggestedTopicIds(suggested);
+    setSelectedTopicIds(suggested);
+    // Only re-run on a new target or when topics change identity; manual
+    // toggles must survive re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target?.authorHandle, target?.text, topics]);
+
+  const toggleTopic = useCallback((id: string) => {
+    setSelectedTopicIds((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id]
+    );
   }, []);
 
   // Pick up the reply target when the user focuses a reply box on X
@@ -147,6 +183,7 @@ export function useDrafter(): UseDrafterReturn {
       strategy: typeof strategy;
       context: ContextToggles;
       target: ReplyTarget | null;
+      topicIds: string[];
       refine?: { current: string; instruction: string } | null;
     }) => {
       portRef.current?.disconnect();
@@ -204,8 +241,8 @@ export function useDrafter(): UseDrafterReturn {
 
   const generateDraft = useCallback(() => {
     setVariants([]);
-    startMainDraft({ intent, strategy, context, target });
-  }, [intent, strategy, context, target, startMainDraft]);
+    startMainDraft({ intent, strategy, context, target, topicIds: selectedTopicIds });
+  }, [intent, strategy, context, target, selectedTopicIds, startMainDraft]);
 
   /** Revise the current draft in place (shorter, punchier, etc.) */
   const refineDraft = useCallback(
@@ -217,10 +254,11 @@ export function useDrafter(): UseDrafterReturn {
         strategy,
         context,
         target,
+        topicIds: selectedTopicIds,
         refine: { current, instruction },
       });
     },
-    [draft, intent, strategy, context, target, startMainDraft]
+    [draft, intent, strategy, context, target, selectedTopicIds, startMainDraft]
   );
 
   /** Generate several takes in parallel; user picks one into the main draft */
@@ -272,11 +310,11 @@ export function useDrafter(): UseDrafterReturn {
 
         port.postMessage({
           type: 'DRAFT',
-          request: { intent, strategy, context, target },
+          request: { intent, strategy, context, target, topicIds: selectedTopicIds },
         });
       }
     },
-    [intent, strategy, context, target]
+    [intent, strategy, context, target, selectedTopicIds]
   );
 
   const pickVariant = useCallback(
@@ -333,6 +371,10 @@ export function useDrafter(): UseDrafterReturn {
     setStrategy,
     context,
     toggleContext,
+    topics,
+    selectedTopicIds,
+    suggestedTopicIds,
+    toggleTopic,
     draft,
     setDraft,
     status,

@@ -17,6 +17,7 @@ const EMPTY_CONTEXT: ResolvedContext = {
   voiceProfile: '',
   authorRecentPosts: [],
   gatheredContext: [],
+  topics: [],
 };
 
 function makeRequest(overrides: Partial<DraftRequest> = {}): DraftRequest {
@@ -81,6 +82,49 @@ describe('buildSystemPrompt', () => {
     });
     expect(system).toContain('Additional instructions from the user');
     expect(system).toContain('Never use hashtags. Lowercase only.');
+  });
+});
+
+describe('topic context', () => {
+  it('puts selected topics in the system prompt with stance and entries', () => {
+    const system = buildSystemPrompt({
+      ...EMPTY_CONTEXT,
+      topics: [
+        {
+          name: 'AI regulation',
+          stance: 'Regulate outcomes, not model sizes.',
+          entries: [
+            { kind: 'post', text: 'the EU act keys on FLOPs, which is a proxy', authorHandle: 'policywonk' },
+            { kind: 'note', text: 'compute thresholds age badly' },
+          ],
+        },
+      ],
+    });
+    expect(system).toContain('about "AI regulation"');
+    expect(system).toContain("The user's stance: Regulate outcomes, not model sizes.");
+    expect(system).toContain('- Saved post by @policywonk: the EU act keys on FLOPs');
+    expect(system).toContain("- User's note: compute thresholds age badly");
+  });
+
+  it('skips topics with nothing in them', () => {
+    const system = buildSystemPrompt({
+      ...EMPTY_CONTEXT,
+      topics: [{ name: 'Empty', stance: '  ', entries: [] }],
+    });
+    expect(system).not.toContain('Empty');
+  });
+
+  it('keeps the newest entries when a topic is over the prompt cap', () => {
+    const entries = Array.from({ length: 40 }, (_, i) => ({
+      kind: 'note' as const,
+      text: `note number ${i}`,
+    }));
+    const system = buildSystemPrompt({
+      ...EMPTY_CONTEXT,
+      topics: [{ name: 'Big', stance: '', entries }],
+    });
+    expect(system).toContain('note number 39');
+    expect(system).not.toContain('note number 0\n');
   });
 });
 

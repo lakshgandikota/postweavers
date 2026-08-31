@@ -23,11 +23,22 @@ export function SyncAccount() {
   const [syncEmail, setSyncEmail] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<{ plan: 'pro' | 'free'; comped: boolean } | null>(null);
+
+  const loadPlan = () => {
+    chrome.runtime
+      .sendMessage({ type: 'GET_BILLING' })
+      .then((res) => {
+        if (res?.plan) setPlan({ plan: res.plan, comped: !!res.comped });
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     chrome.runtime.sendMessage({ type: 'GET_SYNC_STATUS' }).then((res) => {
       setSyncEmail(res?.email ?? null);
     }).catch(() => {});
+    loadPlan();
   }, []);
 
   const signInWithGoogle = async () => {
@@ -37,6 +48,7 @@ export function SyncAccount() {
       const res = await chrome.runtime.sendMessage({ type: 'LINK_GOOGLE' });
       if (res?.success) {
         setSyncEmail(res.email ?? null);
+        loadPlan();
       } else {
         setLinkError(res?.error ?? 'Sign-in failed.');
       }
@@ -50,14 +62,28 @@ export function SyncAccount() {
   return (
     <div className="rounded-lg border border-x-border-light dark:border-x-border-dark p-2">
       {syncEmail ? (
-        <p className="text-xs text-x-text-light dark:text-x-text-dark">
-          <span className="text-green-600 dark:text-green-500">●</span> Syncing across devices as{' '}
-          <span className="font-medium">{syncEmail}</span>
-        </p>
+        <div className="space-y-1">
+          <p className="text-xs text-x-text-light dark:text-x-text-dark">
+            <span className="text-green-600 dark:text-green-500">●</span> Syncing across devices as{' '}
+            <span className="font-medium">{syncEmail}</span>
+          </p>
+          {plan && (
+            <p className="text-[10px] text-x-secondary-light dark:text-x-secondary-dark">
+              {plan.plan === 'pro' ? (
+                <>
+                  <span className="text-green-600 dark:text-green-500">●</span> Cloud Pro
+                  {plan.comped ? ' (complimentary)' : ''}: voice, About me, and topics sync; managed drafting at Pro limits.
+                </>
+              ) : (
+                <>Free plan: voice, About me, and topics still sync. Cloud Pro raises managed drafting limits.</>
+              )}
+            </p>
+          )}
+        </div>
       ) : (
         <div className="space-y-1.5">
           <p className="text-xs text-x-secondary-light dark:text-x-secondary-dark">
-            Sign in so your voice and persona follow you to the iOS/Android apps.
+            Sign in so your voice, About me, and topics follow you to every device.
           </p>
           <button
             type="button"
@@ -106,9 +132,12 @@ export function DrafterSettings({
   const [keyVisible, setKeyVisible] = useState(false);
   const [learning, setLearning] = useState(false);
   const [learnError, setLearnError] = useState<string | null>(null);
-  const [billing, setBilling] = useState<{ uid: string | null; plan: 'pro' | 'free' } | null>(
-    null
-  );
+  const [billing, setBilling] = useState<{
+    uid: string | null;
+    plan: 'pro' | 'free';
+    comped?: boolean;
+    dailyLimit?: number | null;
+  } | null>(null);
 
   useEffect(() => {
     if (settings.keyMode !== 'managed') return;
@@ -179,15 +208,23 @@ export function DrafterSettings({
               <div className="flex items-center justify-between">
                 <p className="text-xs text-x-text-light dark:text-x-text-dark">
                   <span className="text-green-600 dark:text-green-500">●</span> Cloud Pro active
+                  {billing.comped ? ' (complimentary)' : ''}
+                  {billing.dailyLimit ? (
+                    <span className="text-x-secondary-light dark:text-x-secondary-dark">
+                      {' '}· {billing.dailyLimit} drafts/day
+                    </span>
+                  ) : null}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => chrome.tabs.create({ url: STRIPE_PORTAL_URL })}
-                  title="Cancel, change card, or download invoices via Stripe's secure portal"
-                  className="text-xs text-x-accent hover:text-x-accent/80 font-medium transition-colors"
-                >
-                  Manage billing
-                </button>
+                {!billing.comped && (
+                  <button
+                    type="button"
+                    onClick={() => chrome.tabs.create({ url: STRIPE_PORTAL_URL })}
+                    title="Cancel, change card, or download invoices via Stripe's secure portal"
+                    className="text-xs text-x-accent hover:text-x-accent/80 font-medium transition-colors"
+                  >
+                    Manage billing
+                  </button>
+                )}
               </div>
             ) : (
               billing &&
@@ -283,17 +320,9 @@ export function DrafterSettings({
       </>
       )}
 
-      {/* Persona */}
-      <div>
-        <label className={labelClass}>About me (persona)</label>
-        <textarea
-          value={settings.persona}
-          onChange={(e) => onUpdate({ persona: e.target.value })}
-          rows={4}
-          placeholder="Who you are on X: topics, stance, tone. Used as drafting context when the 'About me' block is on."
-          className={inputClass}
-        />
-      </div>
+      <p className="text-[10px] text-x-secondary-light dark:text-x-secondary-dark">
+        "About me" and your topics live in the Context tab.
+      </p>
 
       {/* Custom system instructions */}
       <div>
@@ -336,7 +365,7 @@ export function DrafterSettings({
         <button
           type="button"
           onClick={learnVoice}
-          disabled={learning || !settings.apiKey}
+          disabled={learning || (settings.keyMode === 'byo' && !settings.apiKey)}
           className="w-full px-3 py-1.5 mb-2 text-sm font-medium rounded-lg bg-x-accent text-white hover:bg-x-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {learning

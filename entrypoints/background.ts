@@ -18,12 +18,15 @@ import {
   pullDrafterSettings,
   pushDrafterSettings,
   schedulePush,
+  syncTopics,
+  scheduleTopicsPush,
   linkWithGoogle,
   getSyncAccountEmail,
   getRedirectUri,
   getAuth as getFirebaseAuth,
   getBillingStatus,
 } from '../src/lib/firebase';
+import { getAllTopics, TOPICS_STORAGE_KEY } from '../src/lib/topics';
 import type { AiDrafterSettings } from '../src/types/ai-drafter';
 
 /**
@@ -46,7 +49,7 @@ async function resolveLlmAccess(
   }
   return { managed: null };
 }
-import type { ResolvedContext } from '../src/lib/ai-drafter';
+import type { ResolvedContext, TopicContext } from '../src/lib/ai-drafter';
 import type { DraftPortMessage, DraftPortRequest, DraftRequest } from '../src/types/ai-drafter';
 import { DRAFT_PORT_NAME } from '../src/types/ai-drafter';
 
@@ -120,6 +123,15 @@ async function broadcastSettingsChange(): Promise<void> {
  * Alarm name for retention cleanup
  */
 const RETENTION_ALARM = 'postweaver-retention-cleanup';
+
+/** Periodic cross-device sync (topics + drafter brain) */
+const SYNC_ALARM = 'postweaver-sync';
+const SYNC_PERIOD_MINUTES = 30;
+
+/** Full pull/push round trip; best-effort, safe to call often */
+async function syncEverything(): Promise<void> {
+  await Promise.all([pullDrafterSettings(), syncTopics()]);
+}
 
 /**
  * Perform retention cleanup - delete data older than configured days
@@ -197,12 +209,32 @@ async function resolveDraftContext(request: DraftRequest): Promise<ResolvedConte
     // Basket unavailable; draft without it
   }
 
+  // Topic pools: the ones the panel selected plus every pinned topic
+  let topics: TopicContext[] = [];
+  try {
+    const wanted = new Set(request.topicIds ?? []);
+    topics = (await getAllTopics())
+      .filter((t) => !t.deletedAt && (t.pinned || wanted.has(t.id)))
+      .map((t) => ({
+        name: t.name,
+        stance: t.stance,
+        entries: t.entries.map((e) => ({
+          kind: e.kind,
+          text: e.text,
+          ...(e.authorHandle ? { authorHandle: e.authorHandle } : {}),
+        })),
+      }));
+  } catch (error) {
+    console.warn('[Postweaver] Topic lookup failed:', error);
+  }
+
   return {
     persona: request.context.aboutMe ? settings.persona : '',
     voiceExamples,
     authorBio,
     authorRecentPosts,
     gatheredContext,
+    topics,
     customInstructions: settings.customInstructions,
     customStrategy: settings.customStrategy,
     voiceProfile: request.context.voice ? settings.voiceProfile : '',
@@ -347,14 +379,16 @@ function handleDraftPort(port: chrome.runtime.Port): void {
 export default defineBackground(() => {
   console.log('[Postweaver] Background service worker loaded');
 
-  // Firestore sync: pull the drafter brain on startup, push (debounced) when
-  // it changes locally. Best-effort — everything works offline.
-  void pullDrafterSettings();
+  // Firestore sync: pull the drafter brain and topics on startup, push
+  // (debounced) when they change locally. Best-effort — everything works
+  // offline.
+  void syncEverything();
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && 'postweaver_ai_drafter' in changes) {
-      schedulePush();
-    }
+    if (areaName !== 'local') return;
+    if ('postweaver_ai_drafter' in changes) schedulePush();
+    if (TOPICS_STORAGE_KEY in changes) scheduleTopicsPush();
   });
+  chrome.alarms.create(SYNC_ALARM, { periodInMinutes: SYNC_PERIOD_MINUTES });
 
   // Streaming AI draft connections from the side panel
   chrome.runtime.onConnect.addListener((port) => {
@@ -450,6 +484,8 @@ export default defineBackground(() => {
   chrome.alarms.onAlarm.addListener(async (alarm) => {
     if (alarm.name === RETENTION_ALARM) {
       await performRetentionCleanup();
+    } else if (alarm.name === SYNC_ALARM) {
+      await syncEverything();
     }
   });
 
@@ -557,6 +593,9 @@ export default defineBackground(() => {
           // changed and the new subtree may be empty.
           await pushDrafterSettings();
           await pullDrafterSettings();
+          await syncTopics();
+          // Resolve the plan now so comped accounts show Cloud Pro at once
+          void getBillingStatus();
           return { success: true, email: result.email, linked: result.linked };
         }
         return { success: false, error: result.error };
@@ -568,6 +607,11 @@ export default defineBackground(() => {
 
       case 'GET_BILLING': {
         return await getBillingStatus();
+      }
+
+      case 'SYNC_NOW': {
+        await syncEverything();
+        return { ok: true, email: await getSyncAccountEmail(), syncedAt: Date.now() };
       }
 
       default:

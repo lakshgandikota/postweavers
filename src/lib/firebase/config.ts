@@ -18,6 +18,13 @@ export const FIRESTORE_URL = `https://firestore.googleapis.com/v1/projects/${FIR
 export const DRAFT_FUNCTION_URL = `https://us-central1-${FIREBASE_CONFIG.projectId}.cloudfunctions.net/draft`;
 
 /**
+ * Account/plan lookup (Cloud Function). Resolves the plan server-side, which
+ * is also where comped accounts get their Cloud Pro grant recorded, so the
+ * badge is right from the moment of sign-in rather than after a first draft.
+ */
+export const ME_FUNCTION_URL = `https://us-central1-${FIREBASE_CONFIG.projectId}.cloudfunctions.net/me`;
+
+/**
  * Stripe Payment Link for the Cloud Pro plan ($12/mo). Empty until the
  * Stripe product + payment link exist; the upgrade button hides while empty.
  * The Firebase uid is appended as client_reference_id so the webhook can

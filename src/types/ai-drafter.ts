@@ -114,6 +114,11 @@ export interface DraftRequest {
   context: ContextToggles;
   /** The post being replied to (null when drafting blind) */
   target: ReplyTarget | null;
+  /**
+   * Topic pools to include, by id. Pinned topics are always added by the
+   * background worker on top of these.
+   */
+  topicIds?: string[];
   /** When set, revise an existing draft instead of drafting fresh */
   refine?: { current: string; instruction: string } | null;
 }

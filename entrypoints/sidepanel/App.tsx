@@ -7,6 +7,7 @@ import { CaptureControls } from '../../src/components/CaptureControls';
 import { AiDetectionControls } from '../../src/components/AiDetectionControls';
 import { AnalyticsDashboard } from '../../src/components/analytics';
 import { AiReplyPanel, DrafterSettings, SyncAccount } from '../../src/components/drafter';
+import { ContextPanel } from '../../src/components/context';
 import {
   getAiDrafterSettings,
   updateAiDrafterSettings,
@@ -188,6 +189,32 @@ function AiDraftingSettings() {
   return <DrafterSettings settings={drafterSettings} onUpdate={updateAiDrafterSettings} />;
 }
 
+/** Same self-loading pattern for the Context tab (persona lives in drafter settings) */
+function ContextTab({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const [drafterSettings, setDrafterSettings] = useState<AiDrafterSettings | null>(null);
+
+  useEffect(() => {
+    getAiDrafterSettings().then(setDrafterSettings);
+    return subscribeToAiDrafterSettings(setDrafterSettings);
+  }, []);
+
+  if (!drafterSettings) {
+    return (
+      <div className="flex justify-center py-4">
+        <div className="w-5 h-5 border-2 border-x-accent border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <ContextPanel
+      settings={drafterSettings}
+      onUpdateSettings={updateAiDrafterSettings}
+      onOpenSettings={onOpenSettings}
+    />
+  );
+}
+
 /**
  * Side panel App component
  * Notion-like clean sidebar with collapsible sections
@@ -196,7 +223,7 @@ export default function App() {
   const { settings, update, loading } = useSettings();
   const { theme, loading: themeLoading } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [activePanel, setActivePanel] = useState<'settings' | 'composer'>('composer');
+  const [activePanel, setActivePanel] = useState<'settings' | 'composer' | 'context'>('composer');
 
   // Apply theme class to document
   useEffect(() => {
@@ -241,26 +268,25 @@ export default function App() {
       <header className="sticky top-0 z-10 border-b border-x-border-light dark:border-x-border-dark bg-x-bg-light dark:bg-x-bg-dark">
         {/* Tab navigation */}
         <div className="flex">
-          <button
-            onClick={() => setActivePanel('composer')}
-            className={`flex-1 px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-              activePanel === 'composer'
-                ? 'text-x-text-light dark:text-x-text-dark border-x-accent'
-                : 'text-x-secondary-light dark:text-x-secondary-dark border-transparent hover:text-x-text-light dark:hover:text-x-text-dark'
-            }`}
-          >
-            Composer
-          </button>
-          <button
-            onClick={() => setActivePanel('settings')}
-            className={`flex-1 px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
-              activePanel === 'settings'
-                ? 'text-x-text-light dark:text-x-text-dark border-x-accent'
-                : 'text-x-secondary-light dark:text-x-secondary-dark border-transparent hover:text-x-text-light dark:hover:text-x-text-dark'
-            }`}
-          >
-            Settings
-          </button>
+          {(
+            [
+              { id: 'composer', label: 'Composer' },
+              { id: 'context', label: 'Context' },
+              { id: 'settings', label: 'Settings' },
+            ] as const
+          ).map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => setActivePanel(id)}
+              className={`flex-1 px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+                activePanel === id
+                  ? 'text-x-text-light dark:text-x-text-dark border-x-accent'
+                  : 'text-x-secondary-light dark:text-x-secondary-dark border-transparent hover:text-x-text-light dark:hover:text-x-text-dark'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </header>
 
@@ -361,7 +387,15 @@ export default function App() {
         )}
         {activePanel === 'composer' && (
           <div className="p-4">
-            <AiReplyPanel onOpenSettings={() => setActivePanel('settings')} />
+            <AiReplyPanel
+              onOpenSettings={() => setActivePanel('settings')}
+              onOpenContext={() => setActivePanel('context')}
+            />
+          </div>
+        )}
+        {activePanel === 'context' && (
+          <div className="p-4">
+            <ContextTab onOpenSettings={() => setActivePanel('settings')} />
           </div>
         )}
       </main>

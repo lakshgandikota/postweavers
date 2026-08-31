@@ -19,6 +19,8 @@ import type {
 } from '../../types/ai-drafter';
 import { DRAFT_PORT_NAME, STRATEGY_LABELS } from '../../types/ai-drafter';
 import { getAiDrafterSettings, getContextBasket } from '../storage';
+import { getTopics, suggestTopics } from '../topics';
+import type { Topic } from '../../types/topics';
 import { extractReplyTarget } from './reply-context';
 import { insertTemplateText, focusComposeBox } from '../composer/template-inserter';
 
@@ -51,6 +53,8 @@ export class DraftButtonInjector {
   private shadow: ShadowRoot | null = null;
   private port: chrome.runtime.Port | null = null;
   private draft = '';
+  /** Topic ids toggled on for the open popover (pinned ones are implicit) */
+  private selectedTopicIds = new Set<string>();
 
   constructor(private enabled: boolean = true) {}
 
@@ -152,6 +156,10 @@ export class DraftButtonInjector {
     const target = extractReplyTarget();
     const settings = await getAiDrafterSettings();
     const basketCount = (await getContextBasket()).length;
+    const topics = await getTopics();
+    const targetText = target ? [target.text, ...target.thread.map((t) => t.text)].join(' ') : '';
+    const suggested = new Set(suggestTopics(targetText, topics).map((t) => t.id));
+    this.selectedTopicIds = new Set(suggested);
 
     this.draft = '';
 
@@ -168,7 +176,9 @@ export class DraftButtonInjector {
       settings.defaultStrategy,
       settings.keyMode === 'managed' || !!settings.apiKey,
       target?.authorHandle ?? null,
-      basketCount
+      basketCount,
+      topics,
+      suggested
     );
     document.body.appendChild(host);
 
@@ -205,8 +215,19 @@ export class DraftButtonInjector {
     defaultStrategy: ReplyStrategy,
     hasKey: boolean,
     handle: string | null,
-    basketCount = 0
+    basketCount = 0,
+    topics: Topic[] = [],
+    suggested: Set<string> = new Set()
   ): string {
+    const escape = (s: string) =>
+      s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    const topicChips = topics
+      .map((t) => {
+        const on = t.pinned || suggested.has(t.id);
+        return `<button type="button" class="chip${on ? ' on' : ''}${t.pinned ? ' pinned' : ''}" data-topic-id="${escape(t.id)}" title="${t.pinned ? 'Always included' : suggested.has(t.id) ? 'Auto-selected: the post mentions this topic' : 'Include this topic'}">${escape(t.name)}${t.pinned ? ' 📌' : ''}</button>`;
+      })
+      .join('');
+    const topicsRow = topics.length > 0 ? `<div class="chips" id="pw-topics"><span class="chips-label">Topics</span>${topicChips}</div>` : '';
     const strategyOptions = QUICK_STRATEGIES.map(
       (s) =>
         `<option value="${s}"${s === defaultStrategy ? ' selected' : ''}>${STRATEGY_LABELS[s]}</option>`
@@ -228,11 +249,6 @@ export class DraftButtonInjector {
           box-shadow: 0 8px 28px rgba(0,0,0,0.2);
           padding: 12px;
           box-sizing: border-box;
-        }
-        @media (prefers-color-scheme: dark) {
-          .card { color: #e7e9ea; background: #000; border-color: #2f3336; }
-          textarea, select { background: #16181c; color: #e7e9ea; border-color: #2f3336; }
-          .draft { background: #16181c; border-color: #2f3336; }
         }
         .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
         .title { font-weight: 700; }
@@ -259,8 +275,22 @@ export class DraftButtonInjector {
         }
         .meta { font-size: 11px; opacity: 0.6; margin-left: auto; }
         .banner { font-size: 12px; color: #b45309; margin-bottom: 8px; }
+        .chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 8px; }
+        .chips-label { font-size: 11px; opacity: 0.6; margin-right: 2px; }
+        .chip {
+          font: 11px system-ui, sans-serif; padding: 3px 8px; border-radius: 9999px; cursor: pointer;
+          border: 1px solid #cfd9de; background: transparent; color: inherit; opacity: 0.75;
+        }
+        .chip.on { border-color: rgb(29,155,240); color: rgb(29,155,240); background: rgba(29,155,240,0.1); opacity: 1; }
+        .chip.pinned { cursor: default; }
         .err { color: #d33; font-size: 12px; margin-top: 6px; }
         .hidden { display: none; }
+
+        @media (prefers-color-scheme: dark) {
+          .card { color: #e7e9ea; background: #000; border-color: #2f3336; }
+          textarea, select { background: #16181c; color: #e7e9ea; border-color: #2f3336; }
+          .draft { background: #16181c; border-color: #2f3336; }
+        }
       </style>
       <div class="card">
         <div class="row">
@@ -269,6 +299,7 @@ export class DraftButtonInjector {
         </div>
         ${noKeyBanner}
         ${basketCount > 0 ? `<div class="banner" style="color:#1d9bf0">⊕ ${basketCount} gathered post${basketCount === 1 ? '' : 's'} included as context</div>` : ''}
+        ${topicsRow}
         <select id="pw-strategy">${strategyOptions}</select>
         <textarea id="pw-intent" rows="2" placeholder="Your rough thought (optional)"></textarea>
         <div class="actions">
@@ -308,6 +339,21 @@ export class DraftButtonInjector {
     const copyBtn = $<HTMLButtonElement>('pw-copy');
     const countEl = $<HTMLSpanElement>('pw-count');
 
+    // Topic chips toggle membership; pinned chips are fixed
+    shadow.querySelectorAll<HTMLButtonElement>('.chip[data-topic-id]').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        if (chip.classList.contains('pinned')) return;
+        const id = chip.getAttribute('data-topic-id')!;
+        if (this.selectedTopicIds.has(id)) {
+          this.selectedTopicIds.delete(id);
+          chip.classList.remove('on');
+        } else {
+          this.selectedTopicIds.add(id);
+          chip.classList.add('on');
+        }
+      });
+    });
+
     const runDraft = (refine: { current: string; instruction: string } | null) => {
       const strategy = (strategyEl?.value as ReplyStrategy) || defaultStrategy;
       const request: DraftRequest = {
@@ -315,6 +361,7 @@ export class DraftButtonInjector {
         strategy,
         context: contextDefaults,
         target: target ?? null,
+        topicIds: Array.from(this.selectedTopicIds),
         refine,
       };
 

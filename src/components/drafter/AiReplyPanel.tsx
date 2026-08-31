@@ -9,6 +9,7 @@ import {
 } from '../../lib/storage';
 import type { ContextSnippet } from '../../types/ai-drafter';
 import { CharacterCount } from '../composer/CharacterCount';
+import { SaveToTopicMenu } from '../context/SaveToTopicMenu';
 import type { ContextToggles, ReplyStrategy } from '../../types/ai-drafter';
 import { STRATEGY_DESCRIPTIONS, STRATEGY_LABELS } from '../../types/ai-drafter';
 
@@ -55,7 +56,13 @@ function fmtTokens(n: number | null): string | null {
  * and inserts into X's reply box, and posting is always the user's click on
  * X's own Post button. Nothing is ever submitted automatically.
  */
-export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function AiReplyPanel({
+  onOpenSettings,
+  onOpenContext,
+}: {
+  onOpenSettings: () => void;
+  onOpenContext: () => void;
+}) {
   const {
     settings,
     settingsLoading,
@@ -67,6 +74,10 @@ export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void })
     setStrategy,
     context,
     toggleContext,
+    topics,
+    selectedTopicIds,
+    suggestedTopicIds,
+    toggleTopic,
     draft,
     setDraft,
     status,
@@ -85,6 +96,15 @@ export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void })
   const [insertResult, setInsertResult] = useState<'ok' | 'fail' | null>(null);
   const insertingRef = useRef(false);
   const [basket, setBasket] = useState<ContextSnippet[]>([]);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
+
+  const flashSaved = (topicName: string, added: boolean) => {
+    setSavedNote(added ? `Saved to ${topicName}` : `Already in ${topicName}`);
+    setTimeout(() => setSavedNote(null), 2500);
+  };
+
+  const pinnedTopics = topics.filter((t) => t.pinned);
+  const activeTopicCount = pinnedTopics.length + selectedTopicIds.filter((id) => !pinnedTopics.some((t) => t.id === id)).length;
 
   useEffect(() => {
     getContextBasket().then(setBasket);
@@ -222,6 +242,13 @@ export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void })
                       </span>{' '}
                       {snippet.text.length > 90 ? snippet.text.slice(0, 90) + '…' : snippet.text}
                     </p>
+                    <SaveToTopicMenu
+                      compact
+                      label="Keep"
+                      entry={{ kind: 'post', text: snippet.text, authorHandle: snippet.authorHandle }}
+                      topics={topics}
+                      onSaved={(t, added) => flashSaved(t.name, added)}
+                    />
                     <button
                       onClick={() => removeFromContextBasket(snippet.id)}
                       title="Remove from context"
@@ -233,7 +260,7 @@ export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void })
                 ))}
               </div>
               <p className="mt-1.5 text-[10px] text-x-secondary-light dark:text-x-secondary-dark">
-                Tip: click ⊕ under any post on X to add it here.
+                One-shot: cleared when you clear it. "Keep" files a post under a topic for good.
               </p>
             </div>
           )}
@@ -259,6 +286,70 @@ export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void })
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* About-me nudge: the universal context is empty */}
+          {context.aboutMe && !settings.persona.trim() && (
+            <button
+              onClick={onOpenContext}
+              className="w-full text-left text-[10px] text-x-secondary-light dark:text-x-secondary-dark hover:text-x-accent"
+            >
+              "About me" is empty. <span className="text-x-accent font-medium">Tell drafts who you are →</span>
+            </button>
+          )}
+
+          {/* Topic pools */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-medium text-x-secondary-light dark:text-x-secondary-dark">
+                Topics
+                {activeTopicCount > 0 && (
+                  <span className="ml-1 font-normal">({activeTopicCount} in this draft)</span>
+                )}
+              </label>
+              <button
+                onClick={onOpenContext}
+                className="text-[10px] text-x-accent hover:text-x-accent/80 font-medium"
+              >
+                {topics.length > 0 ? 'Manage' : 'Create one'}
+              </button>
+            </div>
+            {topics.length === 0 ? (
+              <p className="text-[10px] text-x-secondary-light dark:text-x-secondary-dark leading-snug">
+                Build a memory per subject: saved posts, notes, your stance. Drafts about that subject use it.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {topics.map((t) => {
+                  const on = t.pinned || selectedTopicIds.includes(t.id);
+                  const auto = suggestedTopicIds.includes(t.id) && selectedTopicIds.includes(t.id);
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      disabled={t.pinned}
+                      onClick={() => toggleTopic(t.id)}
+                      title={
+                        t.pinned
+                          ? 'Always included (change in Context)'
+                          : auto
+                            ? 'Auto-selected: the post mentions this topic'
+                            : `${t.entries.length} saved item${t.entries.length === 1 ? '' : 's'}`
+                      }
+                      className={`px-2 py-1 text-xs rounded-full border transition-colors ${
+                        on
+                          ? 'bg-x-accent/10 border-x-accent text-x-accent'
+                          : 'border-x-border-light dark:border-x-border-dark text-x-secondary-light dark:text-x-secondary-dark'
+                      } ${t.pinned ? 'cursor-default' : ''}`}
+                    >
+                      {t.name}
+                      {t.pinned && <span className="ml-1 opacity-70">📌</span>}
+                      {auto && <span className="ml-1 opacity-70 text-[10px]">auto</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Strategy */}
@@ -428,6 +519,13 @@ export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void })
                     >
                       Copy
                     </button>
+                    <SaveToTopicMenu
+                      compact
+                      label="Keep"
+                      entry={{ kind: 'note', text: `My reply: ${draft.trim()}` }}
+                      topics={topics}
+                      onSaved={(t, added) => flashSaved(t.name, added)}
+                    />
                     {insertResult === 'ok' && (
                       <span className="text-xs text-green-600 dark:text-green-500">Inserted</span>
                     )}
@@ -441,6 +539,10 @@ export function AiReplyPanel({ onOpenSettings }: { onOpenSettings: () => void })
                 </div>
               )}
             </div>
+          )}
+
+          {savedNote && (
+            <p className="text-xs text-green-600 dark:text-green-500 text-center">{savedNote}</p>
           )}
 
           <p className="text-[10px] text-x-secondary-light dark:text-x-secondary-dark text-center">

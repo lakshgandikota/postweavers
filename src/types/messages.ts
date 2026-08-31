@@ -34,7 +34,9 @@ export type ExtensionMessage =
   | { type: 'INSERT_DRAFT'; content: string }
   | { type: 'LEARN_VOICE' }
   | { type: 'LINK_GOOGLE' }
-  | { type: 'GET_SYNC_STATUS' };
+  | { type: 'GET_SYNC_STATUS' }
+  | { type: 'GET_BILLING' }
+  | { type: 'SYNC_NOW' };
 
 /**
  * Type-safe response types based on message type
@@ -53,6 +55,8 @@ export type MessageResponse<T extends ExtensionMessage['type']> =
   T extends 'LEARN_VOICE' ? { success: boolean; profile?: string; sourceCount?: number; error?: string } :
   T extends 'LINK_GOOGLE' ? { success: boolean; email?: string; linked?: boolean; error?: string } :
   T extends 'GET_SYNC_STATUS' ? { email: string | null; redirectUri: string } :
+  T extends 'GET_BILLING' ? import('../lib/firebase/billing').BillingStatus :
+  T extends 'SYNC_NOW' ? { ok: boolean; email: string | null; syncedAt: number } :
   { success: boolean };
 
 /**

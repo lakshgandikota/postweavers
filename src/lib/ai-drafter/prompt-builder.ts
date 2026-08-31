@@ -62,7 +62,22 @@ export interface ResolvedContext {
   authorRecentPosts: string[];
   /** Posts the user hand-picked from the X UI as extra context ([] when none) */
   gatheredContext: Array<{ authorHandle: string; text: string }>;
+  /**
+   * Topic pools selected (or pinned) for this draft: what the user has
+   * collected and thinks about each subject ([] when none apply)
+   */
+  topics: TopicContext[];
 }
+
+/** One topic's knowledge, ready for the prompt */
+export interface TopicContext {
+  name: string;
+  stance: string;
+  entries: Array<{ kind: 'post' | 'note'; text: string; authorHandle?: string }>;
+}
+
+/** Max entries per topic put in the prompt (newest kept) */
+const MAX_TOPIC_ENTRIES = 25;
 
 /**
  * Built prompt ready for an LLM call
@@ -99,6 +114,13 @@ export function buildSystemPrompt(resolved: ResolvedContext): string {
 
   if (resolved.persona) {
     parts.push(`Who the user is:\n${resolved.persona}`);
+  }
+
+  // Topic knowledge: semi-static per subject, so it lives in the system
+  // prompt and caches across redrafts and variants on the same post
+  for (const topic of resolved.topics) {
+    const block = formatTopic(topic);
+    if (block) parts.push(block);
   }
 
   // Raw examples reinforce the abstract profile (or stand in when none learned)
@@ -226,6 +248,34 @@ export function buildPrompt(
     system: buildSystemPrompt(resolved),
     user: buildUserPrompt(request, resolved),
   };
+}
+
+/**
+ * Render one topic pool as a system-prompt block. Returns '' when the topic
+ * has nothing usable (no stance, no entries).
+ */
+function formatTopic(topic: TopicContext): string {
+  const stance = topic.stance.trim();
+  const entries = topic.entries.slice(-MAX_TOPIC_ENTRIES);
+  if (!stance && entries.length === 0) return '';
+
+  const lines: string[] = [];
+  lines.push(
+    `What the user knows and thinks about "${topic.name}". Use it for facts, framing, and angles so the reply sounds informed and consistent with their view. Do not quote it verbatim unless it fits naturally.`
+  );
+  if (stance) lines.push(`The user's stance: ${stance}`);
+  if (entries.length > 0) {
+    const list = entries
+      .map((e) => {
+        const text = truncate(e.text, MAX_CONTEXT_TWEET_CHARS);
+        return e.kind === 'post'
+          ? `- Saved post${e.authorHandle ? ` by @${e.authorHandle}` : ''}: ${text}`
+          : `- User's note: ${text}`;
+      })
+      .join('\n');
+    lines.push(`Collected material:\n${list}`);
+  }
+  return lines.join('\n');
 }
 
 function truncate(text: string, max: number): string {
